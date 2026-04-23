@@ -410,18 +410,17 @@
                 <!-- Admin Authorization Code -->
                 <div class="input-group">
                     <i class="fas fa-key"></i>
-                    <input type="password" 
+                    <input type="text" 
                            name="auth_code" 
-                           placeholder="Admin Authorization Code" 
-                           value="{{ form.auth_code.value|default:'' }}"
-                           required>
+                           placeholder="Admin Authorization Code (optional for first signup)" 
+                           value="{{ form.auth_code.value|default:'' }}">
                 </div>
 
-                <!-- Metadata: Program Chair only · Admin code required -->
+                <!-- Metadata: Program Chair only · Admin code optional for first signup -->
                 <div class="admin-metadata">
-                    <span><i class="fas fa-gavel"></i> Program Chair only</span>
+                    <span><i class="fas fa-gavel"></i> Program Chair</span>
                     <span class="dot"></span>
-                    <span><i class="fas fa-key"></i> Admin code required</span>
+                    <span><i class="fas fa-key"></i> Auth code optional (first signup only)</span>
                 </div>
 
                 <!-- Register button -->

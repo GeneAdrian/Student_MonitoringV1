@@ -51,6 +51,20 @@
         </div>
       </div>
       
+      <!-- Settings Dropdown (Program Chair only) -->
+      {% if request.user.role == 'program_chair' or request.user.role == 'super_admin' %}
+      <div class="dropdown-section">
+        <a href="#" class="side-item dropdown-trigger {% if 'change_auth_code' in request.resolver_match.url_name %}active{% endif %}">
+          <div class="icon"><i class="fas fa-cog"></i></div>
+          <span class="text">Settings</span>
+          <i class="fas fa-chevron-down dropdown-icon"></i>
+        </a>
+        <div class="dropdown-menu">
+          <a href="{% url 'change_auth_code' %}" class="dropdown-item">Change Auth Code</a>
+        </div>
+      </div>
+      {% endif %}
+      
       <a href="{% url 'logout' %}" class="side-item">
         <div class="icon"><i class="fas fa-sign-out-alt"></i></div>
         <span class="text">Logout</span>

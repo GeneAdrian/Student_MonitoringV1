@@ -3,7 +3,7 @@ from django import forms
 from django.contrib.auth import password_validation
 from django.utils import timezone
 from .models import Student
-from .admin_models import Admin, AdminAuthorization
+from .admin_models import Admin, AdminAuthorization, SystemAuthCode
 
 # ==================== ADMIN AUTHENTICATION FORMS ====================
 
@@ -40,12 +40,6 @@ class AdminSignupForm(forms.Form):
             'placeholder': 'Choose username'
         })
     )
-    email = forms.EmailField(
-        widget=forms.EmailInput(attrs={
-            'class': 'form-input',
-            'placeholder': 'Enter email'
-        })
-    )
     first_name = forms.CharField(
         required=False,
         widget=forms.TextInput(attrs={
@@ -76,10 +70,12 @@ class AdminSignupForm(forms.Form):
         })
     )
     auth_code = forms.CharField(
+        required=False,
         widget=forms.PasswordInput(attrs={
             'class': 'form-input',
-            'placeholder': 'Enter admin authorization code'
-        })
+            'placeholder': 'Enter admin authorization code (optional for first signup)'
+        }),
+        help_text='Leave empty if this is the first admin sign-up for the program chair.'
     )
     
     def clean_username(self):
@@ -87,12 +83,6 @@ class AdminSignupForm(forms.Form):
         if Admin.objects.filter(username=username).exists():
             raise forms.ValidationError('This username is already taken.')
         return username
-    
-    def clean_email(self):
-        email = self.cleaned_data.get('email')
-        if Admin.objects.filter(email=email).exists():
-            raise forms.ValidationError('This email is already registered.')
-        return email
     
     def clean(self):
         cleaned_data = super().clean()
@@ -105,8 +95,16 @@ class AdminSignupForm(forms.Form):
         return cleaned_data
     
     def clean_auth_code(self):
-        code = self.cleaned_data.get('auth_code')
+        code = self.cleaned_data.get('auth_code', '').strip()
         
+        # If no code provided, it's a first-time signup (program chair)
+        if not code:
+            # Check if any admin exists - if not, this is the first signup
+            if Admin.objects.exists():
+                raise forms.ValidationError('Authorization code is required. Only the first admin can sign up without a code.')
+            return code
+        
+        # If code is provided, validate it
         # Check if code exists in AdminAuthorization
         try:
             auth = AdminAuthorization.objects.get(code=code)
@@ -116,9 +114,9 @@ class AdminSignupForm(forms.Form):
                 raise forms.ValidationError('This authorization code has expired.')
             self.cleaned_data['auth_obj'] = auth
         except AdminAuthorization.DoesNotExist:
-            # Check if it's the master admin code from settings
-            from django.conf import settings
-            if code != getattr(settings, 'ADMIN_SIGNUP_CODE', 'ADMIN123'):
+            # Check if it's the current system auth code
+            current_code = SystemAuthCode.get_current_code()
+            if code != current_code:
                 raise forms.ValidationError('Invalid authorization code.')
         
         return code
@@ -128,7 +126,7 @@ class AdminProfileForm(forms.ModelForm):
     """Form for editing admin profile"""
     class Meta:
         model = Admin
-        fields = ['first_name', 'last_name', 'email', 'phone_number', 'profile_picture']
+        fields = ['first_name', 'last_name', 'phone_number', 'profile_picture']
         widgets = {
             'first_name': forms.TextInput(attrs={
                 'class': 'form-input',
@@ -137,10 +135,6 @@ class AdminProfileForm(forms.ModelForm):
             'last_name': forms.TextInput(attrs={
                 'class': 'form-input',
                 'placeholder': 'Enter last name'
-            }),
-            'email': forms.EmailInput(attrs={
-                'class': 'form-input',
-                'placeholder': 'Enter email'
             }),
             'phone_number': forms.TextInput(attrs={
                 'class': 'form-input',
@@ -217,6 +211,39 @@ class CreateAdminCodeForm(forms.ModelForm):
         if expires_at < timezone.now():
             raise forms.ValidationError('Expiration date must be in the future.')
         return expires_at
+
+
+class ChangeSystemAuthCodeForm(forms.Form):
+    """Form for changing the system authorization code"""
+    new_auth_code = forms.CharField(
+        max_length=50,
+        widget=forms.TextInput(attrs={
+            'class': 'form-input',
+            'placeholder': 'Enter new authorization code',
+            'minlength': '6'
+        }),
+        help_text='The new code that all future admins must use to sign up (minimum 6 characters).'
+    )
+    confirm_auth_code = forms.CharField(
+        max_length=50,
+        widget=forms.TextInput(attrs={
+            'class': 'form-input',
+            'placeholder': 'Confirm new authorization code'
+        })
+    )
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        new_code = cleaned_data.get('new_auth_code', '').strip()
+        confirm_code = cleaned_data.get('confirm_auth_code', '').strip()
+        
+        if len(new_code) < 6:
+            raise forms.ValidationError('Authorization code must be at least 6 characters long.')
+        
+        if new_code != confirm_code:
+            raise forms.ValidationError('The authorization codes do not match.')
+        
+        return cleaned_data
 
 
 # ==================== STUDENT FORMS (KEEP ALL OF THESE) ====================

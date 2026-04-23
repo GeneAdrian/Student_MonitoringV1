@@ -23,6 +23,7 @@ urlpatterns = [
     path('signup/', views.signup_view, name='signup'),
     path('register/', views.signup_view, name='register'),
     path('logout/', views.logout_view, name='logout'),
+    path('settings/change-auth-code/', views.change_auth_code, name='change_auth_code'),
 
     # ========== DASHBOARD ROUTES ==========
     path('dashboard/', views.admin_dashboard, name='dashboard'),

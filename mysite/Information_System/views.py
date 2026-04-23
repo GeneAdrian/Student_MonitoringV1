@@ -12,7 +12,7 @@ from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from django.urls import reverse
 from .models import Grade, Student, Course, IntegrationCourse, BoardExamArea, CourseMapping
-from .admin_models import Admin, AdminAuthorization, AdminLoginHistory
+from .admin_models import Admin, AdminAuthorization, AdminLoginHistory, SystemAuthCode
 from .utils import (
     evaluate_grade, compute_averages, calculate_board_exam_percentage, 
     calculate_integration_grade, calculate_integration_percentage, 
@@ -81,18 +81,53 @@ def signup_view(request):
         username = request.POST.get('username')
         password = request.POST.get('password')
         confirm_password = request.POST.get('confirm_password')
-        auth_code = request.POST.get('auth_code')
+        auth_code = request.POST.get('auth_code', '').strip()
         first_name = request.POST.get('first_name', '')
         last_name = request.POST.get('last_name', '')
-        
-        ADMIN_CODE = getattr(settings, 'ADMIN_SIGNUP_CODE', 'ADMIN123')
         
         if password != confirm_password:
             messages.error(request, "Passwords do not match.")
         elif Admin.objects.filter(username=username).exists():
             messages.error(request, "Username already exists.")
         else:
-            if auth_code == ADMIN_CODE:
+            # Check if this is the first admin signup
+            if not Admin.objects.exists():
+                # First admin can sign up without auth code
+                admin = Admin.objects.create(
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_active=True,
+                    role='program_chair'  # First admin is a program chair
+                )
+                admin.set_password(password)
+                admin.save()
+                
+                # Ensure SystemAuthCode is initialized with default code
+                SystemAuthCode.get_current_code()
+                
+                messages.success(request, "Account created successfully as Program Chair! You can now log in and manage authorization codes.")
+                return redirect('login')
+            
+            # For subsequent signups, auth code is required
+            if not auth_code:
+                messages.error(request, "Authorization code is required.")
+            else:
+                # Check if code exists in AdminAuthorization
+                auth_obj = None
+                try:
+                    auth_obj = AdminAuthorization.objects.get(code=auth_code, is_used=False)
+                    if auth_obj.expires_at <= timezone.now():
+                        messages.error(request, "Authorization code has expired.")
+                        return render(request, 'signup.html')
+                except AdminAuthorization.DoesNotExist:
+                    # Check if it's the current system auth code
+                    current_code = SystemAuthCode.get_current_code()
+                    if auth_code != current_code:
+                        messages.error(request, "Invalid authorization code.")
+                        return render(request, 'signup.html')
+                
+                # Create admin with valid auth code
                 admin = Admin.objects.create(
                     username=username,
                     first_name=first_name,
@@ -103,34 +138,15 @@ def signup_view(request):
                 admin.set_password(password)
                 admin.save()
                 
+                # Mark the authorization code as used if it's from AdminAuthorization
+                if auth_obj:
+                    auth_obj.is_used = True
+                    auth_obj.used_by = admin
+                    auth_obj.used_at = timezone.now()
+                    auth_obj.save()
+                
                 messages.success(request, "Account created successfully! You can now log in.")
                 return redirect('login')
-            else:
-                try:
-                    auth = AdminAuthorization.objects.get(code=auth_code, is_used=False)
-                    if auth.expires_at > timezone.now():
-                        admin = Admin.objects.create(
-                            username=username,
-                            first_name=first_name,
-                            last_name=last_name,
-                            auth_code=auth_code,
-                            is_active=True,
-                            role='admin'
-                        )
-                        admin.set_password(password)
-                        admin.save()
-                        
-                        auth.is_used = True
-                        auth.used_by = admin
-                        auth.used_at = timezone.now()
-                        auth.save()
-                        
-                        messages.success(request, "Account created successfully! You can now log in.")
-                        return redirect('login')
-                    else:
-                        messages.error(request, "Authorization code has expired.")
-                except AdminAuthorization.DoesNotExist:
-                    messages.error(request, "Invalid authorization code.")
     
     return render(request, 'signup.html')
 
@@ -141,6 +157,34 @@ def logout_view(request):
         auth_logout(request)
         messages.info(request, f'You have been logged out.')
     return redirect('login')
+
+
+@login_required(login_url='login')
+def change_auth_code(request):
+    """Allow admin to change the system authorization code"""
+    from .forms import ChangeSystemAuthCodeForm
+    
+    # Only allow program chair or super admin to change auth code
+    if request.user.role not in ['program_chair', 'super_admin']:
+        messages.error(request, 'Only program chairs can change the authorization code.')
+        return redirect('admin_dashboard')
+    
+    if request.method == 'POST':
+        form = ChangeSystemAuthCodeForm(request.POST)
+        if form.is_valid():
+            new_code = form.cleaned_data['new_auth_code'].strip()
+            SystemAuthCode.set_code(new_code, changed_by=request.user)
+            messages.success(request, f'Authorization code has been successfully changed to: {new_code}')
+            return redirect('admin_dashboard')
+    else:
+        form = ChangeSystemAuthCodeForm()
+    
+    current_code = SystemAuthCode.get_current_code()
+    context = {
+        'form': form,
+        'current_code': current_code
+    }
+    return render(request, 'change_auth_code.html', context)
 
 
 # ==================== DASHBOARD VIEWS ====================

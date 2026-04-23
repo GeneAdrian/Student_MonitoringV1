@@ -108,3 +108,33 @@ class AdminLoginHistory(models.Model):
         db_table = 'admin_login_history'
         ordering = ['-login_time']
         verbose_name_plural = "Admin Login Histories"
+
+
+class SystemAuthCode(models.Model):
+    """Store system-wide authorization code that can be changed by admin"""
+    code = models.CharField(max_length=50, default='ARCHI2025')
+    changed_by = models.ForeignKey(Admin, on_delete=models.SET_NULL, null=True, blank=True, related_name='auth_code_changes')
+    changed_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"System Auth Code: {self.code}"
+    
+    class Meta:
+        db_table = 'system_auth_code'
+        verbose_name_plural = "System Auth Code"
+    
+    @classmethod
+    def get_current_code(cls):
+        """Get the current system authorization code"""
+        obj, created = cls.objects.get_or_create(id=1, defaults={'code': 'ARCHI2025'})
+        return obj.code
+    
+    @classmethod
+    def set_code(cls, new_code, changed_by=None):
+        """Update the system authorization code"""
+        obj, created = cls.objects.get_or_create(id=1)
+        obj.code = new_code
+        obj.changed_by = changed_by
+        obj.save()
+        return obj
